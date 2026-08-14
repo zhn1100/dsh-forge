@@ -22,6 +22,15 @@ export interface ForgeDoctorReport {
   checks: Array<{ name: string; ok: boolean; detail: string }>
 }
 
+/** Minimal structural view of the calling Agent (avoids a dsh-agent dependency). */
+export interface ForgeAgentRef {
+  readonly id: string
+}
+
+interface WorkspaceRegistryLike {
+  list(): Promise<Array<{ path: string; sessionIds: string[] }>>
+}
+
 export default class ForgeControlService extends Service {
   static inject = ['tools']
 
@@ -75,12 +84,30 @@ export default class ForgeControlService extends Service {
     return this.experiments.create(task, snapshot)
   }
 
-  verify(root: string, level: 'quick' | 'package' | 'full', signal?: AbortSignal): Promise<VerificationReport> {
-    return verifyProject(this.workspaceRoot, root, level, signal)
+  /**
+   * The workspace a tool call targets. Prefers the calling agent's session
+   * workspace (workspaceRegistry), so promote/verify follow the session's
+   * working directory instead of the directory the server was started in.
+   */
+  async resolveWorkspaceRoot(agent?: ForgeAgentRef): Promise<string> {
+    if (!agent) return this.workspaceRoot
+    const workspaceRegistry = this.ctx.get('workspaceRegistry') as WorkspaceRegistryLike | undefined
+    if (!workspaceRegistry) return this.workspaceRoot
+    try {
+      const match = (await workspaceRegistry.list()).find(workspace => workspace.sessionIds.includes(agent.id))
+      if (match) return match.path
+    } catch (error) {
+      this.ctx.logger.warn(`workspaceRegistry lookup failed; falling back to ${this.workspaceRoot}: ${String(error)}`)
+    }
+    return this.workspaceRoot
   }
 
-  promote(spec: PromotionSpec): Promise<{ destination: string; files: string[] }> {
-    return promotePackage(this.workspaceRoot, spec)
+  verify(root: string, level: 'quick' | 'package' | 'full', signal?: AbortSignal, agent?: ForgeAgentRef): Promise<VerificationReport> {
+    return this.resolveWorkspaceRoot(agent).then(workspaceRoot => verifyProject(workspaceRoot, root, level, signal))
+  }
+
+  promote(spec: PromotionSpec, agent?: ForgeAgentRef): Promise<{ destination: string; files: string[] }> {
+    return this.resolveWorkspaceRoot(agent).then(workspaceRoot => promotePackage(workspaceRoot, spec))
   }
 
   async doctor(): Promise<ForgeDoctorReport> {

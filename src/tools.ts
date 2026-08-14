@@ -8,7 +8,7 @@ export const inject = ['tools', 'forge', 'systemPrompt']
 
 const FORGE_PROMPT = `You are operating the DSH Forge development environment. Follow this order for every Harness extension: create an experiment trace; read forge_snapshot; call cordis_inspect_list and then cordis_inspect_query for every Service, Event, Builtin, Tool schema, or Client slot you depend on; retrieve authoritative local references with forge_* queries; record a complete PluginDesignSpec before implementation; verify Fiber state explicitly (PENDING is not success); record every immutable dynamic Package revision and diagnostic; stop and rollback experiments when testing lifecycle cleanup; then promote successful behavior into a source-controlled TypeScript package and reproduce it in a clean Profile.
 
-The dynamic Cordis runtime is a prototype plane, never a release artifact. Do not modify or unload the forge control Service, its knowledge index, experiment registry, verification policy, this preset, or the ordinary user DSH Home. Do not invent an API when local Reference or live Inspect has no match: report that it was not found. Do not enable an untrusted git dependency build script without explicit user approval.`
+The dynamic Cordis runtime is a prototype plane, never a release artifact. Do not modify or unload the forge control Service, its knowledge index, experiment registry, verification policy, this preset, or the ordinary user DSH Home. Do not invent an API when local Reference or live Inspect has no match: report that it was not found. Do not enable an untrusted git dependency build script without explicit user approval. If a tool returns empty content with no result (especially the skill tool), retry it once; if it still fails, report the failure explicitly before continuing. When a forge_* or cordis_* call rejects for missing or invalid fields, read the installed implementation under $FORGE_HOME/profiles/forge/node_modules/dsh-forge/lib before retrying instead of guessing field by field.`
 
 function asJson(value: unknown): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue
@@ -98,7 +98,10 @@ export function apply(ctx: Context): void {
       packageId: { type: 'string', description: 'Immutable dynamic Package id.' },
       reason: { type: 'string', description: 'Why this revision exists. Required for revision (with pluginId, packageId and state).' },
       references: { type: 'string', description: 'JSON string array or comma-separated authoritative references.' },
-      level: { type: 'string', description: 'Verification level.' },
+      level: {
+        type: 'string',
+        description: 'Verification level and evidence class: static (source checks, stubs, fake DOM), package (clean build/typecheck/test of the package), or runtime (real running Profile with genuine end-user interaction evidence). Stub and smoke evidence only supports static/package or PROTOTYPE; RUNTIME_VERIFY must cite real-environment evidence.',
+      },
       passed: { type: 'boolean', description: 'Verification outcome.' },
       state: {
         type: 'string',
@@ -119,12 +122,12 @@ export function apply(ctx: Context): void {
       }
       if (args.action === 'promotion') {
         const allowed = ['NONE', 'SCAFFOLDED', 'VERIFIED', 'FAILED'] as const
-        if (!allowed.includes(args.value as typeof allowed[number])) throw new Error('Invalid promotion status')
+        if (!allowed.includes(args.value as typeof allowed[number])) throw new Error(`Invalid promotion status: ${args.value} (valid: ${allowed.join(', ')})`)
         return experimentSummary(await ctx.forge.experiments.setPromotion(args.id, args.value as typeof allowed[number]))
       }
       const statuses = ['DEFINED', 'RUNNING', 'FAILED', 'STOPPED', 'ROLLED_BACK'] as const
       if (!args.pluginId || !args.packageId || !args.reason || !statuses.includes(args.state as PackageRevision['status'])) {
-        throw new Error('revision requires pluginId, packageId, reason, and a valid state')
+        throw new Error(`revision requires pluginId, packageId, reason, and a valid state (valid states: ${statuses.join(', ')})`)
       }
       return experimentSummary(await ctx.forge.experiments.addRevision(args.id, {
         pluginId: args.pluginId,
@@ -138,25 +141,25 @@ export function apply(ctx: Context): void {
 
   ctx.tools.register(defineTool({
     name: 'forge_verify',
-    description: 'Run the bounded Forge verification gate in a workspace-contained package directory. Commands are selected from package scripts, never model-supplied.',
+    description: 'Run the bounded Forge verification gate in a workspace-contained package directory (the calling session\'s workspace). Commands are selected from package scripts, never model-supplied.',
     parameters: {
-      root: { type: 'string', required: true, description: 'Package directory inside the current workspace.' },
+      root: { type: 'string', required: true, description: 'Package directory inside the calling session\'s workspace.' },
       level: { type: 'string', required: true, enum: ['quick', 'package', 'full'] },
     },
     output: jsonOutput,
-    execute: async (args, exec) => asJson(await ctx.forge.verify(args.root, args.level, exec.signal)),
+    execute: async (args, exec) => asJson(await ctx.forge.verify(args.root, args.level, exec.signal, exec.agent)),
   }))
 
   ctx.tools.register(defineTool({
     name: 'forge_promote',
-    description: 'Create a new formal TypeScript Harness bundle from a reviewed promotion spec. Refuses existing or out-of-workspace destinations.',
+    description: 'Create a new formal TypeScript Harness bundle from a reviewed promotion spec, in the calling session\'s workspace. Refuses existing or out-of-workspace destinations.',
     parameters: {
       spec: { type: 'string', required: true, description: 'JSON PromotionSpec: packageName, pluginName, description, destination, source, rowId.' },
     },
     output: jsonOutput,
-    async execute(args) {
+    async execute(args, exec) {
       const parsed = JSON.parse(args.spec) as PromotionSpec
-      return asJson(await ctx.forge.promote(parsed))
+      return asJson(await ctx.forge.promote(parsed, exec.agent))
     },
   }))
 

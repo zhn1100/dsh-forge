@@ -94,11 +94,13 @@ export class ExperimentStore {
   }
 
   async transition(id: string, state: string): Promise<Experiment> {
-    if (!EXPERIMENT_STATES.includes(state as ExperimentState)) throw new Error(`Unknown experiment state: ${state}`)
+    if (!EXPERIMENT_STATES.includes(state as ExperimentState)) {
+      throw new Error(`Unknown experiment state: ${state} (valid: ${EXPERIMENT_STATES.join(', ')})`)
+    }
     const experiment = await this.get(id)
     const target = state as ExperimentState
     if (!TRANSITIONS[experiment.state].includes(target)) {
-      throw new Error(`Invalid transition ${experiment.state} -> ${target}`)
+      throw new Error(`Invalid transition ${experiment.state} -> ${target} (valid next states: ${TRANSITIONS[experiment.state].join(', ')})`)
     }
     experiment.state = target
     experiment.updatedAt = new Date().toISOString()
