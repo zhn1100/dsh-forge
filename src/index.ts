@@ -31,6 +31,10 @@ interface WorkspaceRegistryLike {
   list(): Promise<Array<{ path: string; sessionIds: string[] }>>
 }
 
+interface SessionsLike {
+  get(sessionId: string): { header: { cwd?: string } } | undefined
+}
+
 export default class ForgeControlService extends Service {
   static inject = ['tools']
 
@@ -86,19 +90,24 @@ export default class ForgeControlService extends Service {
 
   /**
    * The workspace a tool call targets. Prefers the calling agent's session
-   * workspace (workspaceRegistry), so promote/verify follow the session's
-   * working directory instead of the directory the server was started in.
+   * workspace (workspaceRegistry), then the session's creation cwd, so
+   * promote/verify follow the session's working directory instead of the
+   * directory the server was started in.
    */
   async resolveWorkspaceRoot(agent?: ForgeAgentRef): Promise<string> {
     if (!agent) return this.workspaceRoot
     const workspaceRegistry = this.ctx.get('workspaceRegistry') as WorkspaceRegistryLike | undefined
-    if (!workspaceRegistry) return this.workspaceRoot
-    try {
-      const match = (await workspaceRegistry.list()).find(workspace => workspace.sessionIds.includes(agent.id))
-      if (match) return match.path
-    } catch (error) {
-      this.ctx.logger.warn(`workspaceRegistry lookup failed; falling back to ${this.workspaceRoot}: ${String(error)}`)
+    if (workspaceRegistry) {
+      try {
+        const match = (await workspaceRegistry.list()).find(workspace => workspace.sessionIds.includes(agent.id))
+        if (match) return match.path
+      } catch (error) {
+        this.ctx.logger.warn(`workspaceRegistry lookup failed; falling back to session cwd: ${String(error)}`)
+      }
     }
+    const sessions = this.ctx.get('sessions') as SessionsLike | undefined
+    const cwd = sessions?.get(agent.id)?.header.cwd
+    if (cwd) return cwd
     return this.workspaceRoot
   }
 
