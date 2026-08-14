@@ -25,12 +25,14 @@ const TRANSITIONS: Readonly<Record<ExperimentState, readonly ExperimentState[]>>
 function validateDesignSpec(value: unknown): DesignSpec {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('designSpec must be a JSON object')
   const candidate = value as Record<string, unknown>
+  const problems: string[] = []
   const strings = ['objective', 'capability', 'existingSeam', 'scope', 'lifecycleOwner', 'securityBoundary', 'rollback'] as const
-  for (const key of strings) if (typeof candidate[key] !== 'string' || candidate[key].trim() === '') throw new Error(`designSpec.${key} is required`)
+  for (const key of strings) if (typeof candidate[key] !== 'string' || candidate[key].trim() === '') problems.push(`designSpec.${key} (non-empty string)`)
   const arrays = ['effects', 'inject', 'events', 'verification', 'references'] as const
-  for (const key of arrays) if (!Array.isArray(candidate[key]) || !candidate[key].every(item => typeof item === 'string')) throw new Error(`designSpec.${key} must be a string array`)
+  for (const key of arrays) if (!Array.isArray(candidate[key]) || !candidate[key].every(item => typeof item === 'string')) problems.push(`designSpec.${key} (string array)`)
   const booleans = ['changesModelContext', 'needsConfig', 'needsClientHalf'] as const
-  for (const key of booleans) if (typeof candidate[key] !== 'boolean') throw new Error(`designSpec.${key} must be boolean`)
+  for (const key of booleans) if (typeof candidate[key] !== 'boolean') problems.push(`designSpec.${key} (boolean)`)
+  if (problems.length > 0) throw new Error(`designSpec is missing or invalid: ${problems.join(', ')}`)
   return value as DesignSpec
 }
 

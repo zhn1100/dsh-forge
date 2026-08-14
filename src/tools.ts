@@ -90,14 +90,20 @@ export function apply(ctx: Context): void {
       },
       id: { type: 'string', description: 'Experiment id; omitted only for create/list.' },
       task: { type: 'string', description: 'Task description for create.' },
-      state: { type: 'string', description: 'Target task state, diagnostic Fiber state, or revision status.' },
-      value: { type: 'string', description: 'Design JSON, diagnostic summary, verification summary, or promotion status.' },
+      value: {
+        type: 'string',
+        description: 'For design: a JSON string of the FULL PluginDesignSpec with ALL 15 fields — strings: objective, capability, existingSeam, scope, lifecycleOwner, securityBoundary, rollback; string arrays: effects, inject, events, verification, references; booleans: changesModelContext, needsConfig, needsClientHalf. A missing or empty field is rejected in one error listing every problem, so submit the complete object in a single call. For diagnostic: summary text. For verification: summary text. For promotion: NONE|SCAFFOLDED|VERIFIED|FAILED.',
+      },
       pluginId: { type: 'string', description: 'Stable dynamic Plugin id.' },
       packageId: { type: 'string', description: 'Immutable dynamic Package id.' },
-      reason: { type: 'string', description: 'Why this revision exists.' },
+      reason: { type: 'string', description: 'Why this revision exists. Required for revision (with pluginId, packageId and state).' },
       references: { type: 'string', description: 'JSON string array or comma-separated authoritative references.' },
       level: { type: 'string', description: 'Verification level.' },
       passed: { type: 'boolean', description: 'Verification outcome.' },
+      state: {
+        type: 'string',
+        description: 'For revision: one of DEFINED|RUNNING|FAILED|STOPPED|ROLLED_BACK (required). For transition: next experiment state. For diagnostic: Fiber state text.',
+      },
     },
     output: jsonOutput,
     async execute(args) {
