@@ -1,0 +1,75 @@
+{
+  "name": "dsh-forge",
+  "version": "0.1.0",
+  "description": "A reproducible, runtime-aware DeepSeek Harness plugin development profile",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "plugin-development"
+  ],
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./tools": {
+      "types": "./lib/tools.d.ts",
+      "default": "./lib/tools.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "dsh-forge": "./lib/cli.js"
+  },
+  "files": [
+    "lib/",
+    "preset/",
+    "assets/",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "hygiene": "node scripts/hygiene.mjs",
+    "verify": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run build && pnpm run hygiene",
+    "prepare": "pnpm run build"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-system-prompt": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-system-prompt": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-tools": "0.1.0-rc.6",
+    "@types/node": "^22.20.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/zhn1100/dsh-forge#readme",
+  "bugs": {
+    "url": "https://github.com/zhn1100/dsh-forge/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhn1100/dsh-forge.git"
+  }
+}

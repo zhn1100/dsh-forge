@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">DSH Forge</title>
+  <desc id="desc">一枚带有火花的铁砧图标</desc>
+  <defs>
+    <linearGradient id="bg" x1="72" y1="52" x2="438" y2="464" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#172238"/>
+      <stop offset="1" stop-color="#080d18"/>
+    </linearGradient>
+    <linearGradient id="steel" x1="110" y1="184" x2="382" y2="390" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e8edf5"/>
+      <stop offset="0.48" stop-color="#91a0b6"/>
+      <stop offset="1" stop-color="#48566d"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="124" y1="222" x2="424" y2="274" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffcb57"/>
+      <stop offset="1" stop-color="#f06b32"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#000" flood-opacity=".42"/>
+    </filter>
+  </defs>
+  <rect x="24" y="24" width="464" height="464" rx="112" fill="url(#bg)"/>
+  <path d="M115 115l12 29 29 12-29 12-12 29-12-29-29-12 29-12 12-29zm294 40l8 20 20 8-20 8-8 20-8-20-20-8 20-8 8-20zM354 83l5 13 13 5-13 5-5 13-5-13-13-5 13-5 5-13z" fill="#ffb938"/>
+  <g filter="url(#shadow)">
+    <path d="M104 190h246c31 0 53-9 72-26l18 31c-14 29-42 51-84 63l-31 9H104c-20 0-36-16-36-36v-5c0-20 16-36 36-36z" fill="url(#steel)"/>
+    <path d="M78 222h280c27 0 52-8 74-24-16 29-42 49-76 60l-31 9H104c-19 0-33-13-36-31 1-5 4-10 10-14z" fill="url(#edge)" opacity=".9"/>
+    <path d="M172 267h153l-26 55 17 60h45c17 0 31 14 31 31v13H120v-13c0-17 14-31 31-31h45l17-60-41-55z" fill="url(#steel)"/>
+    <path d="M120 426h272v18H120z" fill="#3d4a60"/>
+    <path d="M192 382h124l-17-60H213l-17 60z" fill="#64738a" opacity=".72"/>
+  </g>
+  <path d="M136 208h190" stroke="#fff" stroke-width="12" stroke-linecap="round" opacity=".48"/>
+</svg>
