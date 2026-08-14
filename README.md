@@ -16,6 +16,8 @@
 - 提供受限的 `quick`、`package`、`full` 验证流程。
 - 每次启动安全同步普通 `~/.dsh` 中的用户配置，同时保护 Forge 本地修改。
 - 使用 SHA-256 内容寻址 tarball 安装自身，避免复用旧包缓存。
+- 将 Cordis、System Prompt 和 Tools 保持为宿主提供的可选 peer，避免 Profile 内重复运行时破坏 Symbol 身份。
+- 升级时先由 DSH 正常移除旧 Forge 依赖再安装新工件，避免 lockfile 保留旧 peer 绑定。
 
 ## 安装
 

@@ -16,6 +16,17 @@ import { syncOrdinaryHome } from './home-sync.js'
 const DEFAULT_REFERENCE_REVISION = '47f943859bef60e4160492346772ded9b24f765a'
 const DSH_VERSION = '0.1.0-rc.6'
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const PROFILE_PATCH_TEMPLATE = `# Your patch layer for this dsh profile, applied after every bundle layer:
+# a top-level YAML array of loader patch entries (id-targeted config
+# overrides, disables, and insert lists; \`!!js\` expressions allowed).
+[]
+`
+const PROFILE_PNPM_WORKSPACE = `packages:
+  - .
+
+nodeLinker: hoisted
+autoInstallPeers: false
+`
 
 function option(args: string[], name: string): string | undefined {
   const index = args.indexOf(name)
@@ -169,12 +180,76 @@ async function packForgeArtifact(home: string): Promise<string> {
   }
 }
 
-async function removeLegacyWorkspaceLink(home: string, env: NodeJS.ProcessEnv): Promise<void> {
+async function ensureForgeProfile(home: string): Promise<void> {
+  const dir = join(home, 'profiles', 'forge')
+  const manifestPath = join(dir, 'package.json')
+  const exists = await stat(manifestPath).then(() => true, () => false)
+  if (!exists) {
+    // Mirror the official shipped web profile template (PROFILE_TEMPLATES.web):
+    // in-box Base + Web bundles and an empty dependency set. The `dsh plugin`
+    // auto-init would otherwise fall back to DEFAULT_PROFILE_BUNDLES, which is
+    // headless and would drop the Web UI.
+    await mkdir(dir, { recursive: true, mode: 0o700 })
+    await writeFile(manifestPath, `${JSON.stringify({
+      name: 'dsh-profile-forge',
+      private: true,
+      dependencies: {},
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] } },
+    }, undefined, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
+  }
+  // initProfile semantics: existing files are never touched; the patch layer
+  // and pnpm settings are only created when missing.
+  const patchPath = join(dir, 'cordis.patch.yml')
+  if (!(await stat(patchPath).then(() => true, () => false))) {
+    await writeFile(patchPath, PROFILE_PATCH_TEMPLATE, { encoding: 'utf8', mode: 0o600 })
+  }
+  const workspacePath = join(dir, 'pnpm-workspace.yaml')
+  if (!(await stat(workspacePath).then(() => true, () => false))) {
+    await writeFile(workspacePath, PROFILE_PNPM_WORKSPACE, { encoding: 'utf8', mode: 0o600 })
+  }
+}
+
+async function removeExistingForgeInstall(home: string, env: NodeJS.ProcessEnv): Promise<void> {
+  const manifestPath = join(home, 'profiles', 'forge', 'package.json')
+  const manifest = await readFile(manifestPath, 'utf8').then(
+    value => JSON.parse(value) as { dependencies?: Record<string, string> },
+    () => undefined,
+  )
+  if (manifest === undefined) return
+  const removals: string[] = []
   const installed = join(home, 'profiles', 'forge', 'node_modules', 'dsh-forge')
   const metadata = await lstat(installed).catch(() => undefined)
-  if (!metadata?.isSymbolicLink()) return
-  const removed = await run('npx', ['--yes', `@deepseek-ai/dsh@${DSH_VERSION}`, 'plugin', '--profile', 'forge', 'remove', 'dsh-forge'], env)
-  if (removed.code !== 0) throw new Error(`Failed to remove the legacy Forge workspace link:\n${removed.output}`)
+  if (metadata !== undefined || manifest.dependencies?.['dsh-forge'] !== undefined) removals.push('dsh-forge')
+  // Legacy installers wrongly installed the in-box Web bundle as a profile
+  // dependency; drop it so a duplicate @deepseek-ai/dsh-tools runtime (and its
+  // Scheduler Symbol mismatch) cannot survive an upgrade.
+  if (manifest.dependencies?.['@deepseek-ai/dsh-web-app'] !== undefined) removals.push('@deepseek-ai/dsh-web-app')
+  for (const packageName of removals) {
+    const removed = await run('npx', ['--yes', `@deepseek-ai/dsh@${DSH_VERSION}`, 'plugin', '--profile', 'forge', 'remove', packageName], env)
+    if (removed.code !== 0) throw new Error(`Failed to remove ${packageName} before replacement:\n${removed.output}`)
+  }
+}
+
+async function reconcileForgeManifest(home: string): Promise<void> {
+  const manifestPath = join(home, 'profiles', 'forge', 'package.json')
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as {
+    dependencies?: Record<string, string>
+    dsh?: { profile?: { bundles?: string[] } }
+  }
+  const forgeSpec = manifest.dependencies?.['dsh-forge']
+  if (forgeSpec === undefined || !forgeSpec.startsWith('file:')) {
+    throw new Error(`dsh-forge was not installed from the artifact tarball: ${forgeSpec ?? 'missing dependency'}`)
+  }
+  // Reconcile may have dropped the in-box Web bundle from the layer list while
+  // cleaning the legacy dependency; restore the full layer stack and the
+  // artifact-only dependency set atomically. Base/Web stay resolved from the
+  // dsh installation and never become profile-local dependencies.
+  manifest.dependencies = { 'dsh-forge': forgeSpec }
+  manifest.dsh = {
+    ...manifest.dsh,
+    profile: { ...manifest.dsh?.profile, bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'dsh-forge'] },
+  }
+  await writeFile(manifestPath, `${JSON.stringify(manifest, undefined, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
 }
 
 async function install(args: string[]): Promise<void> {
@@ -187,19 +262,21 @@ async function install(args: string[]): Promise<void> {
   const preset = await installPreset(home, flag(args, '--force'))
   const forgeArtifact = await packForgeArtifact(home)
   const env = { ...process.env, DSH_HOME: home }
-  await removeLegacyWorkspaceLink(home, env)
-  const packages = [`@deepseek-ai/dsh-web-app@${DSH_VERSION}`, forgeArtifact]
-  const installs: Array<{ package: string; output: string }> = []
-  for (const packageSpec of packages) {
-    let result = await run('npx', ['--yes', `@deepseek-ai/dsh@${DSH_VERSION}`, 'plugin', '--profile', 'forge', 'add', packageSpec], env)
-    if (result.code !== 0 && await acknowledgePinnedOfficialBuild(home, result.output)) {
-      const prepared = await run('pnpm', ['install'], env, { cwd: join(home, 'profiles', 'forge') })
-      if (prepared.code !== 0) throw new Error(`Failed to build the pinned official Web dependency:\n${prepared.output}`)
-      result = await run('npx', ['--yes', `@deepseek-ai/dsh@${DSH_VERSION}`, 'plugin', '--profile', 'forge', 'add', packageSpec], env)
-    }
-    if (result.code !== 0) throw new Error(`Failed to install ${packageSpec}:\n${result.output}`)
-    installs.push({ package: packageSpec, output: result.output })
+  // Base/Web are in-box bundles resolved from the dsh installation; the
+  // profile must never install them as local dependencies, or a duplicate
+  // @deepseek-ai/dsh-tools runtime breaks the scheduler Symbol identity.
+  // A remove/add replacement is intentional: pnpm otherwise binds a new
+  // optional host peer to a stale Profile-local provider from the old lockfile.
+  await ensureForgeProfile(home)
+  await removeExistingForgeInstall(home, env)
+  let result = await run('npx', ['--yes', `@deepseek-ai/dsh@${DSH_VERSION}`, 'plugin', '--profile', 'forge', 'add', forgeArtifact], env)
+  if (result.code !== 0 && await acknowledgePinnedOfficialBuild(home, result.output)) {
+    const prepared = await run('pnpm', ['install'], env, { cwd: join(home, 'profiles', 'forge') })
+    if (prepared.code !== 0) throw new Error(`Failed to build the pinned official Web dependency:\n${prepared.output}`)
+    result = await run('npx', ['--yes', `@deepseek-ai/dsh@${DSH_VERSION}`, 'plugin', '--profile', 'forge', 'add', forgeArtifact], env)
   }
+  if (result.code !== 0) throw new Error(`Failed to install ${forgeArtifact}:\n${result.output}`)
+  await reconcileForgeManifest(home)
   if (!flag(args, '--no-sync')) {
     await cloneHarnessSource(forgeDataPath('reference', 'deepseek-harness'), DEFAULT_REFERENCE_REVISION)
     const index = await buildKnowledgeIndex(forgeDataPath('reference', 'deepseek-harness'), DSH_VERSION)
@@ -207,7 +284,7 @@ async function install(args: string[]): Promise<void> {
   }
   const dump = await run('npx', ['--yes', `@deepseek-ai/dsh@${DSH_VERSION}`, '--profile', 'forge', '--dump-config'], env)
   if (dump.code !== 0 || !dump.output.includes('forge-control')) throw new Error(`Forge profile validation failed:\n${dump.output}`)
-  print({ home, profile: 'forge', homeSync, preset, forgeArtifact, installs, configValidated: true })
+  print({ home, profile: 'forge', homeSync, preset, forgeArtifact, installed: [forgeArtifact], configValidated: true })
 }
 
 async function doctor(): Promise<void> {
@@ -224,6 +301,17 @@ async function doctor(): Promise<void> {
   for (const [name, path] of Object.entries(paths)) {
     checks.push({ name, ok: await stat(path).then(() => true, () => false), detail: path })
   }
+  const hostRuntimePackages = ['@deepseek-ai/cordis', '@deepseek-ai/dsh-system-prompt', '@deepseek-ai/dsh-tools']
+  const shadowResults = await Promise.all(hostRuntimePackages.map(
+    name => stat(join(home, 'profiles', 'forge', 'node_modules', ...name.split('/'))).then(() => true, () => false),
+  ))
+  const shadows = hostRuntimePackages
+    .filter((_, index) => shadowResults[index])
+  checks.push({
+    name: 'host-runtime-unshadowed',
+    ok: shadows.length === 0,
+    detail: shadows.length === 0 ? 'no profile-local host runtime copies' : `shadow copies: ${shadows.join(', ')}`,
+  })
   const manifest = await readFile(paths.profile, 'utf8').then(value => JSON.parse(value) as { dsh?: { profile?: { bundles?: string[] } } }, () => undefined)
   const bundles = manifest?.dsh?.profile?.bundles ?? []
   checks.push({ name: 'bundle', ok: bundles.includes('dsh-forge'), detail: bundles.join(', ') })

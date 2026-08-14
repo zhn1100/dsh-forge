@@ -1,6 +1,7 @@
 import { lstat, stat, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Service, type Context } from '@deepseek-ai/cordis'
+import { TOOL_RUNTIME_SCHEDULER } from '@deepseek-ai/dsh-tools'
 import { ExperimentStore } from './experiment-store.js'
 import { KnowledgeStore } from './knowledge-store.js'
 import { forgeDataPath, forgeHome } from './paths.js'
@@ -22,6 +23,8 @@ export interface ForgeDoctorReport {
 }
 
 export default class ForgeControlService extends Service {
+  static inject = ['tools']
+
   readonly knowledge: KnowledgeStore
   readonly experiments: ExperimentStore
   readonly workspaceRoot: string
@@ -35,6 +38,9 @@ export default class ForgeControlService extends Service {
   }
 
   protected async [Service.init](): Promise<void> {
+    if (this.ctx.tools[TOOL_RUNTIME_SCHEDULER] === undefined) {
+      throw new Error('Forge resolved a different @deepseek-ai/dsh-tools runtime than the host; reinstall the Forge profile to remove the shadow copy')
+    }
     this.homeSync = await syncOrdinaryHome()
     if (this.homeSync.conflicts.length > 0) {
       this.ctx.logger.warn(`Forge Home sync preserved ${this.homeSync.conflicts.length} locally modified path(s); see ${this.homeSync.manifestPath}`)
@@ -95,6 +101,11 @@ export default class ForgeControlService extends Service {
       detail: this.homeSync === undefined
         ? 'startup synchronization has not completed'
         : `${this.homeSync.status}; copied=${this.homeSync.copied}, updated=${this.homeSync.updated}, preserved=${this.homeSync.preserved}`,
+    })
+    checks.push({
+      name: 'tool-runtime-identity',
+      ok: this.ctx.tools[TOOL_RUNTIME_SCHEDULER] !== undefined,
+      detail: this.ctx.tools[TOOL_RUNTIME_SCHEDULER] === undefined ? 'scheduler symbol mismatch' : 'host scheduler identity matches',
     })
     await checkFile('knowledge-index', forgeDataPath('knowledge-index.json'))
     await checkFile('forge-profile', join(home, 'profiles', 'forge', 'package.json'))
