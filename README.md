@@ -41,6 +41,8 @@ node lib/cli.js install
 DSH_HOME="$HOME/.dsh-forge" npx @deepseek-ai/dsh@0.1.0-rc.6 --profile forge
 ```
 
+Forge Profile 默认监听 `127.0.0.1:3188`（与主线 dsh 的 `3080` 错开，可同时运行）；需要其他端口时用 `--port <端口>` 覆盖。
+
 打开 Web UI 后选择 **DSH Forge 开发者** Preset。
 
 ### 工作区边界

@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 import { forgeDataPath, safeSegment } from './paths.js'
 import { EXPERIMENT_STATES, type DesignSpec, type Experiment, type ExperimentState, type PackageRevision } from './types.js'
 
-const TRANSITIONS: Readonly<Record<ExperimentState, readonly ExperimentState[]>> = {
+export const TRANSITIONS: Readonly<Record<ExperimentState, readonly ExperimentState[]>> = {
   REQUEST: ['CLASSIFY'],
   CLASSIFY: ['INSPECT'],
   INSPECT: ['RETRIEVE'],
@@ -119,7 +119,7 @@ export class ExperimentStore {
   async addRevision(id: string, revision: Omit<PackageRevision, 'createdAt'>): Promise<Experiment> {
     const experiment = await this.get(id)
     if (experiment.packageRevisions.some(item => item.packageId === revision.packageId)) {
-      throw new Error(`Package revision already recorded: ${revision.packageId}`)
+      throw new Error(`Package revision already recorded: ${revision.packageId} (revisions are immutable; record later states of this package via a diagnostic)`)
     }
     experiment.pluginId ??= revision.pluginId
     if (experiment.pluginId !== revision.pluginId) throw new Error('A Forge experiment tracks exactly one dynamic Plugin id')

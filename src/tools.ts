@@ -6,9 +6,11 @@ import type { Experiment, PackageRevision, PromotionSpec } from './types.js'
 export const name = 'dsh-forge-tools'
 export const inject = ['tools', 'forge', 'systemPrompt']
 
-const FORGE_PROMPT = `You are operating the DSH Forge development environment. Follow this order for every Harness extension: create an experiment trace; read forge_snapshot; call cordis_inspect_list and then cordis_inspect_query for every Service, Event, Builtin, Tool schema, or Client slot you depend on; retrieve authoritative local references with forge_* queries; record a complete PluginDesignSpec before implementation; verify Fiber state explicitly (PENDING is not success); record every immutable dynamic Package revision and diagnostic; stop and rollback experiments when testing lifecycle cleanup; then promote successful behavior into a source-controlled TypeScript package and reproduce it in a clean Profile.
+const EXPERIMENT_STATE_MACHINE = 'REQUEST→CLASSIFY→INSPECT→RETRIEVE→DESIGN→PLAN_CHECK→IMPLEMENT→STATIC_VERIFY→PROTOTYPE→RUNTIME_VERIFY→PROMOTE→CLEAN_PROFILE_TEST→DELIVER (branches: STATIC_VERIFY/PROTOTYPE/RUNTIME_VERIFY/PROMOTE/CLEAN_PROFILE_TEST may fall back to DIAGNOSE, which returns to REVISE, which re-enters IMPLEMENT/PROTOTYPE/RUNTIME_VERIFY)'
 
-The dynamic Cordis runtime is a prototype plane, never a release artifact. Do not modify or unload the forge control Service, its knowledge index, experiment registry, verification policy, this preset, or the ordinary user DSH Home. Do not invent an API when local Reference or live Inspect has no match: report that it was not found. Do not enable an untrusted git dependency build script without explicit user approval. If a tool returns empty content with no result (especially the skill tool), retry it once; if it still fails, report the failure explicitly before continuing. When a forge_* or cordis_* call rejects for missing or invalid fields, read the installed implementation under $FORGE_HOME/profiles/forge/node_modules/dsh-forge/lib before retrying instead of guessing field by field.`
+const FORGE_PROMPT = `You are operating the DSH Forge development environment. Follow this order for every Harness extension: create an experiment trace; read forge_snapshot; call cordis_inspect_list and then cordis_inspect_query for every Service, Event, Builtin, Tool schema, or Client slot you depend on; retrieve authoritative local references with forge_* queries; record a complete PluginDesignSpec before implementation; verify Fiber state explicitly (PENDING is not success); record every immutable dynamic Package revision and diagnostic; stop and rollback experiments when testing lifecycle cleanup; then promote successful behavior into a source-controlled TypeScript package and reproduce it in a clean Profile. Advance the experiment through the full state machine to DELIVER: ${EXPERIMENT_STATE_MACHINE}. Every create/transition/show response carries nextStates; advance exactly one step at a time.
+
+The dynamic Cordis runtime is a prototype plane, never a release artifact. Do not modify or unload the forge control Service, its knowledge index, experiment registry, verification policy, this preset, or the ordinary user DSH Home. Do not invent an API when local Reference or live Inspect has no match: report that it was not found. Do not enable an untrusted git dependency build script without explicit user approval. If a tool returns empty content with no result (especially the skill tool), retry it once; if it still fails, report the failure explicitly before continuing. When a forge_* or cordis_* call rejects for missing or invalid fields, read the installed implementation under ~/.dsh-forge/profiles/forge/node_modules/dsh-forge/lib before retrying instead of guessing field by field.`
 
 function asJson(value: unknown): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue
@@ -30,8 +32,10 @@ function references(input?: string): string[] {
   return input.split(',').map(item => item.trim()).filter(Boolean)
 }
 
-function experimentSummary(experiment: Experiment): JsonValue {
-  return asJson(experiment)
+import { TRANSITIONS } from './experiment-store.js'
+
+export function experimentSummary(experiment: Experiment): JsonValue {
+  return asJson({ ...experiment, nextStates: [...TRANSITIONS[experiment.state]] })
 }
 
 export function apply(ctx: Context): void {
@@ -81,7 +85,7 @@ export function apply(ctx: Context): void {
 
   ctx.tools.register(defineTool({
     name: 'forge_experiment',
-    description: 'Persist the Forge development state machine, PluginDesignSpec, immutable dynamic revisions, diagnostics and verification evidence.',
+    description: `Persist the Forge development state machine, PluginDesignSpec, immutable dynamic revisions, diagnostics and verification evidence. State machine: ${EXPERIMENT_STATE_MACHINE}. Every create/transition/show result includes nextStates.`,
     parameters: {
       action: {
         type: 'string',
@@ -95,8 +99,8 @@ export function apply(ctx: Context): void {
         description: 'For design: a JSON string of the FULL PluginDesignSpec with ALL 15 fields — strings: objective, capability, existingSeam, scope, lifecycleOwner, securityBoundary, rollback; string arrays: effects, inject, events, verification, references; booleans: changesModelContext, needsConfig, needsClientHalf. A missing or empty field is rejected in one error listing every problem, so submit the complete object in a single call. For diagnostic: summary text. For verification: summary text. For promotion: NONE|SCAFFOLDED|VERIFIED|FAILED.',
       },
       pluginId: { type: 'string', description: 'Stable dynamic Plugin id.' },
-      packageId: { type: 'string', description: 'Immutable dynamic Package id.' },
-      reason: { type: 'string', description: 'Why this revision exists. Required for revision (with pluginId, packageId and state).' },
+      packageId: { type: 'string', description: 'Immutable dynamic Package id. Each packageId may be recorded exactly once; later states of the same package go through diagnostic.' },
+      reason: { type: 'string', description: 'Why this revision exists. Required for revision (with pluginId, packageId and state). Recording a revision with RUNNING or ROLLED_BACK implicitly marks it current.' },
       references: { type: 'string', description: 'JSON string array or comma-separated authoritative references.' },
       level: {
         type: 'string',

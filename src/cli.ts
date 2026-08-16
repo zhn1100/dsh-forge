@@ -16,10 +16,20 @@ import { syncOrdinaryHome } from './home-sync.js'
 const DEFAULT_REFERENCE_REVISION = '47f943859bef60e4160492346772ded9b24f765a'
 const DSH_VERSION = '0.1.0-rc.6'
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const FORGE_DEFAULT_PORT = 3188
 const PROFILE_PATCH_TEMPLATE = `# Your patch layer for this dsh profile, applied after every bundle layer:
 # a top-level YAML array of loader patch entries (id-targeted config
 # overrides, disables, and insert lists; \`!!js\` expressions allowed).
-[]
+#
+# Forge defaults its web server to a non-mainline port so the Forge profile
+# can run side by side with a plain dsh profile; \`dsh --profile forge --port N\`
+# still overrides it.
+- id: webserver
+  name: '@deepseek-ai/dsh-host-webserver'
+  inject: [webStartup]
+  config:
+    host: !!js ctx.webStartup.host ?? '127.0.0.1'
+    port: !!js ctx.webStartup.port ?? ${FORGE_DEFAULT_PORT}
 `
 const PROFILE_PNPM_WORKSPACE = `packages:
   - .
@@ -202,6 +212,22 @@ async function ensureForgeProfile(home: string): Promise<void> {
   const patchPath = join(dir, 'cordis.patch.yml')
   if (!(await stat(patchPath).then(() => true, () => false))) {
     await writeFile(patchPath, PROFILE_PATCH_TEMPLATE, { encoding: 'utf8', mode: 0o600 })
+  } else {
+    // Migrate older profiles: default the web server to the Forge port while
+    // preserving any user rows. The webserver row restates the bundle layer's
+    // whole config, so it must carry host as well as port. Repairs stray bare
+    // flow-list markers (`[]`) left by earlier migrations.
+    const existing = await readFile(patchPath, 'utf8')
+    const stripped = existing.replace(/^[ \t]*\[\s*\]\s*$/m, '')
+    const hasWebserver = /- id: webserver\b/.test(stripped)
+    if (!hasWebserver) {
+      const base = stripped.trim().length > 0 ? stripped.trimEnd() : ''
+      const row = `- id: webserver\n  name: '@deepseek-ai/dsh-host-webserver'\n  inject: [webStartup]\n  config:\n    host: !!js ctx.webStartup.host ?? '127.0.0.1'\n    port: !!js ctx.webStartup.port ?? ${FORGE_DEFAULT_PORT}\n`
+      const next = base ? `${base}\n\n${row}` : row
+      await writeFile(patchPath, next, { encoding: 'utf8', mode: 0o600 })
+    } else if (stripped !== existing) {
+      await writeFile(patchPath, stripped, { encoding: 'utf8', mode: 0o600 })
+    }
   }
   const workspacePath = join(dir, 'pnpm-workspace.yaml')
   if (!(await stat(workspacePath).then(() => true, () => false))) {

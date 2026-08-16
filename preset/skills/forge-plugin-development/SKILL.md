@@ -7,7 +7,16 @@ description: Develop, inspect, prototype, verify, and promote DeepSeek Harness C
 
 Use this workflow for every Harness/Cordis extension.
 
-1. Create a trace with `forge_experiment(action:"create")` and advance it to `INSPECT`.
+Experiment state machine (advance exactly one step per `forge_experiment transition`; every create/transition/show result lists `nextStates`):
+
+```
+REQUEST → CLASSIFY → INSPECT → RETRIEVE → DESIGN → PLAN_CHECK → IMPLEMENT
+→ STATIC_VERIFY → PROTOTYPE → RUNTIME_VERIFY → PROMOTE → CLEAN_PROFILE_TEST → DELIVER
+   │          │           │            │              │              │
+   └──────────┴─── DIAGNOSE → REVISE ──┴──────────────┴──────────────┘
+```
+
+1. Create a trace with `forge_experiment(action:"create")`, then advance it to `CLASSIFY`, then `INSPECT`.
 2. Read `forge_snapshot`. Never mix another checkout or documentation revision into the task.
 3. Run `cordis_inspect_list`, then `cordis_inspect_query` for every Service, Event, Builtin, Tool, and Client slot the design may use.
 4. Retrieve official documentation, symbols, packages, implementations, examples, and tests with the matching `forge_*` tools.
@@ -16,6 +25,9 @@ Use this workflow for every Harness/Cordis extension.
 7. Inspect runtime state after every run. `PENDING` and `FAILED` are not successful activation. Test stop, update, and rollback, and verify registrations disappear after stop.
 8. Use `forge_promote` or normal source edits to create the formal TypeScript package. Dynamic source is evidence, not a deliverable.
 9. Run `forge_verify` and reproduce in a new process and clean Forge Profile before `DELIVER`.
+10. Close the trace: advance the experiment through the remaining states to `DELIVER` even when promotion is not applicable (leave `promotionStatus` as NONE). A trace that stops at `PROTOTYPE` is not closed.
+
+Revisions are immutable evidence: each dynamic Package id is recorded exactly once (a second `revision` call for the same id is rejected); later states of that package go into `diagnostic`. Recording with `RUNNING` or `ROLLED_BACK` implicitly marks the revision current.
 
 ## Hard-won platform facts
 
