@@ -6,6 +6,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { buildKnowledgeIndex, cloneHarnessSource, writeKnowledgeIndex } from './indexer.js'
+import { ExperimentStore } from './experiment-store.js'
 import { KnowledgeStore } from './knowledge-store.js'
 import { forgeDataPath, forgeHome } from './paths.js'
 import { promotePackage } from './promoter.js'
@@ -379,6 +380,10 @@ async function promote(args: string[]): Promise<void> {
   if (!specPath) throw new Error('promote requires --spec <file>')
   const spec = JSON.parse(await readFile(resolve(specPath), 'utf8')) as PromotionSpec
   print(await promotePackage(process.cwd(), spec))
+  const experiment = await new ExperimentStore().get(spec.rowId).catch(() => undefined)
+  if (experiment?.designSpec?.needsClientHalf) {
+    print('WARNING: the design requires a client half; the promoted package is host-only. Add dsh.client, exports["./client"] and the client bundle, then verify in a real browser before CLEAN_PROFILE_TEST.')
+  }
 }
 
 function help(): void {

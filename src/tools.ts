@@ -156,14 +156,40 @@ export function apply(ctx: Context): void {
 
   ctx.tools.register(defineTool({
     name: 'forge_promote',
-    description: 'Create a new formal TypeScript Harness bundle from a reviewed promotion spec, in the calling session\'s workspace. Refuses existing or out-of-workspace destinations.',
+    description: `Create a new formal TypeScript Harness bundle from a reviewed promotion spec, in the calling session's workspace. Refuses existing or out-of-workspace destinations. When spec.rowId names an experiment whose designSpec.needsClientHalf is true, the result carries a client-half checklist: the promoted package is host-only by design and the client bundle must be added and verified separately.`,
     parameters: {
-      spec: { type: 'string', required: true, description: 'JSON PromotionSpec: packageName, pluginName, description, destination, source, rowId.' },
+      spec: { type: 'string', required: true, description: 'JSON PromotionSpec: packageName, pluginName, description, destination, source, rowId (the experiment id; its designSpec.needsClientHalf triggers a client-half checklist), inject.' },
     },
     output: jsonOutput,
     async execute(args, exec) {
       const parsed = JSON.parse(args.spec) as PromotionSpec
-      return asJson(await ctx.forge.promote(parsed, exec.agent))
+      const result = await ctx.forge.promote(parsed, exec.agent)
+      let clientHalfRequired = false
+      try {
+        const experiment = await ctx.forge.experiments.get(parsed.rowId)
+        if (experiment.designSpec?.needsClientHalf) {
+          clientHalfRequired = true
+          await ctx.forge.experiments.addDiagnostic(
+            parsed.rowId,
+            'PROMOTE',
+            'design requires a client half; the promoted package is host-only — add the client bundle (dsh.client, exports["./client"], bundle file) and re-verify in a real browser before CLEAN_PROFILE_TEST',
+          )
+        }
+      } catch {
+        // Experiment lookup is advisory; a missing or stale rowId does not fail promotion.
+      }
+      return asJson(clientHalfRequired
+        ? {
+            ...result,
+            clientHalfRequired: true,
+            clientHalfChecklist: [
+              'package.json declares dsh.client',
+              'exports contains ./client',
+              'client bundle file exists and builds',
+              'headless-browser check: zero console errors and the target DOM is present',
+            ],
+          }
+        : result)
     },
   }))
 
