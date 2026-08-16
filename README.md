@@ -15,6 +15,7 @@
 - 管理可恢复的插件实验、验证状态与 Promotion scaffold。
 - 提供受限的 `quick`、`package`、`full` 验证流程。
 - 每次启动安全同步普通 `~/.dsh` 中的用户配置，同时保护 Forge 本地修改。
+- 每次启动镜像普通 `~/.dsh` 各 Profile 通过 `cordis.patch.yml` `insert` 声明的 out-of-tree 插件（包目录 + Forge Profile 注册），让主线的插件在 Forge 环境同样可用。
 - 使用 SHA-256 内容寻址 tarball 安装自身，避免复用旧包缓存。
 - 将 Cordis、System Prompt 和 Tools 保持为宿主提供的可选 peer，避免 Profile 内重复运行时破坏 Symbol 身份。
 - 升级时先由 DSH 正常移除旧 Forge 依赖再安装新工件，避免 lockfile 保留旧 peer 绑定。
@@ -51,7 +52,7 @@ Forge 启动时同步的是 `~/.dsh → ~/.dsh-forge` 的用户态数据，不�
 
 - 从工作区 A 切换到工作区 B，不会复制 A 的代码到 B。
 - A、B 的修改互不影响，但共享同一个 Forge 配置和控制面。
-- `forge/`、`profiles/`、`.agent-presets/` 和 `cordis.patch.yml` 永不参与 Home 同步。
+- `forge/`、`profiles/`、`.agent-presets/` 和 `cordis.patch.yml` 永不参与 Home 同步（唯一例外：主线 Profile 通过 `insert` 声明的 out-of-tree 插件会镜像到 `~/.dsh-forge/profiles/node_modules/` 并在 Forge Profile 的 `cordis.patch.yml` 注册）。
 - Forge 侧已修改或删除的文件不会被覆盖；源端删除也不会传播。
 
 同步基线保存在 `~/.dsh-forge/forge/home-sync-manifest.json`。如需使用其他上游 Home，可显式设置 `DSH_FORGE_SOURCE_HOME`。

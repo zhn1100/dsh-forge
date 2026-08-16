@@ -93,4 +93,38 @@ describe('ordinary Home synchronization', () => {
       entries: {},
     })
   })
+
+  it('mirrors out-of-tree plugins and registers them in the Forge profile patch', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'forge-home-plugins-'))
+    roots.push(root)
+    const source = join(root, 'main')
+    const target = join(root, 'forge-home')
+    await mkdir(join(source, 'profiles', 'web'), { recursive: true })
+    await mkdir(join(source, 'profiles', 'node_modules', 'dsh-vision-access', 'lib'), { recursive: true })
+    await mkdir(join(target, 'profiles', 'forge'), { recursive: true })
+    await writeFile(join(target, 'profiles', 'forge', 'cordis.patch.yml'), '# forge patch\n[]\n')
+    await writeFile(join(source, 'profiles', 'web', 'cordis.patch.yml'), [
+      '- insert:',
+      '    - id: vision-access',
+      '      name: dsh-vision-access',
+      '',
+    ].join('\n'))
+    await writeFile(join(source, 'profiles', 'node_modules', 'dsh-vision-access', 'package.json'), '{"name":"dsh-vision-access"}\n')
+    await writeFile(join(source, 'profiles', 'node_modules', 'dsh-vision-access', 'lib', 'client.js'), 'export const ok = true\n')
+
+    const first = await syncOrdinaryHome(source, target)
+    expect(first.plugins.copied).toBe(1)
+    expect(first.plugins.registered).toEqual(['vision-access'])
+    expect(await readFile(join(target, 'profiles', 'node_modules', 'dsh-vision-access', 'lib', 'client.js'), 'utf8')).toBe('export const ok = true\n')
+    const patch = await readFile(join(target, 'profiles', 'forge', 'cordis.patch.yml'), 'utf8')
+    expect(patch).toContain('- insert:')
+    expect(patch).toContain('- id: vision-access')
+    expect(patch).toContain('name: dsh-vision-access')
+
+    const second = await syncOrdinaryHome(source, target)
+    expect(second.plugins.skipped).toBe(1)
+    expect(second.plugins.registered).toEqual([])
+    const patchAgain = await readFile(join(target, 'profiles', 'forge', 'cordis.patch.yml'), 'utf8')
+    expect(patchAgain.match(/- id: vision-access/g)).toHaveLength(1)
+  })
 })

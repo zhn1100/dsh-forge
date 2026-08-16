@@ -136,7 +136,7 @@ export default class ForgeControlService extends Service {
       ok: this.homeSync !== undefined && this.homeSync.errors.length === 0,
       detail: this.homeSync === undefined
         ? 'startup synchronization has not completed'
-        : `${this.homeSync.status}; copied=${this.homeSync.copied}, updated=${this.homeSync.updated}, preserved=${this.homeSync.preserved}`,
+        : `${this.homeSync.status}; copied=${this.homeSync.copied}, updated=${this.homeSync.updated}, preserved=${this.homeSync.preserved}, plugins(c/u/p/s)=${this.homeSync.plugins.copied}/${this.homeSync.plugins.updated}/${this.homeSync.plugins.preserved}/${this.homeSync.plugins.skipped}, registered=[${this.homeSync.plugins.registered.join(', ')}]`,
     })
     checks.push({
       name: 'tool-runtime-identity',
